@@ -84,8 +84,9 @@ namespace gr {
                               gr_vector_const_void_star& input_items,
                               gr_vector_void_star&       output_items )
     {
+      gr_complex *ch_samples = new gr_complex[noutput_items+100000];
+
       for (double freq = d_low_freq; freq <= d_high_freq; freq += 1e6) {   
-        gr_complex *ch_samples = new gr_complex[noutput_items+100000];
         gr_vector_void_star btch( 1 );
         btch[0] = ch_samples;
         double on_channel_energy, snr;
@@ -102,7 +103,6 @@ namespace gr {
           gr_vector_const_void_star cbtch( 1 );
           cbtch[0] = ch_samples;
           int len = channel_symbols( cbtch, symbols, ch_count );
-          delete [] ch_samples;
           
           if (brok) {
             int limit = ((len - SYMBOLS_PER_BASIC_RATE_SHORTENED_ACCESS_CODE) < SYMBOLS_PER_BASIC_RATE_SLOT) ? 
@@ -126,6 +126,7 @@ namespace gr {
             }
           }
 
+          #ifdef BTLE_ENABLE
           if (leok) {
             symp = symbols;
             int limit = ((len - SYMBOLS_PER_BASIC_RATE_SHORTENED_ACCESS_CODE) < SYMBOLS_PER_BASIC_RATE_SLOT) ? 
@@ -147,13 +148,12 @@ namespace gr {
               }
             }
           }
+          #endif
           delete [] symbols;
-        }
-        else {
-          delete [] ch_samples;
         }
       }
       d_cumulative_count += (int) d_samples_per_slot;
+      delete [] ch_samples;
       
       /* 
        * The runtime system wants to know how many output items we
