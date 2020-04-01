@@ -31,6 +31,7 @@
 #include "gr_bluetooth/piconet.h"
 #include "tun.h"
 #include <map>
+#include <mutex>
 
 namespace gr {
   namespace bluetooth {
@@ -54,6 +55,10 @@ namespace gr {
       /* the piconets we are monitoring */
       std::map<int, basic_rate_piconet::sptr> d_basic_rate_piconets;
       std::map<uint32_t, low_energy_piconet::sptr> d_low_energy_piconets;
+
+      boost::thread*    bthread[20];
+      std::mutex        m_basic_rate_piconets;
+      std::mutex        m_low_energy_piconets;
 
       /* handle AC */
       void ac(char *symbols, int len, double freq, double snr);
@@ -88,6 +93,11 @@ namespace gr {
       int work(int                        noutput_items,
 	       gr_vector_const_void_star& input_items,
 	       gr_vector_void_star&       output_items);
+
+      void work_freq(int                        noutput_items,
+	             gr_vector_const_void_star& input_items,
+	             gr_vector_void_star&       output_items,
+	             double                     freq);
     };
 
   } // namespace bluetooth
