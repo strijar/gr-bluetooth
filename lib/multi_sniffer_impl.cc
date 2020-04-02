@@ -30,8 +30,6 @@
 #include <gnuradio/io_signature.h>
 #include "multi_sniffer_impl.h"
 
-// #define BTLE_ENABLE
-
 namespace gr {
   namespace bluetooth {
 
@@ -79,14 +77,6 @@ namespace gr {
      */
     multi_sniffer_impl::~multi_sniffer_impl()
     {
-      int               j;
-      double            freq;
-
-      for (j = 0, freq = d_low_freq; freq <= d_high_freq; j++, freq += 1e6)
-         if (bthread[j]) {
-            bthread[j]->join();
-            delete bthread[j];
-        }
     }
 
     int
@@ -94,98 +84,85 @@ namespace gr {
                               gr_vector_const_void_star& input_items,
                               gr_vector_void_star&       output_items )
     {
-      int               j;
-      double            freq;
+      for (double freq = d_low_freq; freq <= d_high_freq; freq += 1e6) {   
+        gr_complex *ch_samples = new gr_complex[noutput_items+100000];
+        gr_vector_void_star btch( 1 );
+        btch[0] = ch_samples;
+        double on_channel_energy, snr;
+        int ch_count = channel_samples( freq, input_items, btch, on_channel_energy, history() );
+        bool brok; // = check_basic_rate_squelch(input_items);
+        bool leok = brok = check_snr( freq, on_channel_energy, snr, input_items );
 
-      for (j = 0, freq = d_low_freq; freq <= d_high_freq; j++, freq += 1e6) {
-         bthread[j] = new boost::thread(std::bind(&multi_sniffer_impl::work_freq, this, noutput_items, input_items, output_items, freq));
+        /* number of symbols available */
+        if (brok || leok) {
+          int sym_length = history();
+          char *symbols = new char[sym_length];
+          /* pointer to our starting place for sniff_ */
+          char *symp = symbols;
+          gr_vector_const_void_star cbtch( 1 );
+          cbtch[0] = ch_samples;
+          int len = channel_symbols( cbtch, symbols, ch_count );
+          delete [] ch_samples;
+          
+          if (brok) {
+            int limit = ((len - SYMBOLS_PER_BASIC_RATE_SHORTENED_ACCESS_CODE) < SYMBOLS_PER_BASIC_RATE_SLOT) ? 
+              (len - SYMBOLS_PER_BASIC_RATE_SHORTENED_ACCESS_CODE) : SYMBOLS_PER_BASIC_RATE_SLOT;
+        
+            /* look for multiple packets in this slot */
+            while (limit >= 0) {
+              /* index to start of packet */
+              int i = classic_packet::sniff_ac(symp, limit);
+              if (i >= 0) {
+                int step = i + SYMBOLS_PER_BASIC_RATE_SHORTENED_ACCESS_CODE;
+                ac(&symp[i], len - i, freq, snr);
+                len   -= step;
+				if(step >= sym_length) error_out("Bad step");
+                symp   = &symp[step];
+                limit -= step;
+              } 
+              else {
+                break;
+              }
+            }
+          }
+
+          if (leok) {
+            symp = symbols;
+            int limit = ((len - SYMBOLS_PER_BASIC_RATE_SHORTENED_ACCESS_CODE) < SYMBOLS_PER_BASIC_RATE_SLOT) ? 
+              (len - SYMBOLS_PER_BASIC_RATE_SHORTENED_ACCESS_CODE) : SYMBOLS_PER_BASIC_RATE_SLOT;
+
+            while (limit >= 0) {
+              int i = le_packet::sniff_aa(symp, limit, freq);
+              if (i >= 0) {
+                int step = i + SYMBOLS_PER_LOW_ENERGY_PREAMBLE_AA;
+				//printf("symp[%i], len-i = %i\n", i, len-i);
+                aa(&symp[i], len - i, freq, snr);
+                len   -= step;
+				if(step >= sym_length) error_out("Bad step");
+                symp   = &symp[step];
+                limit -= step;
+              }
+              else {
+                break;
+              }
+            }
+          }
+          delete [] symbols;
+        }
+        else {
+          delete [] ch_samples;
+        }
       }
-
-      for (j = 0, freq = d_low_freq; freq <= d_high_freq; j++, freq += 1e6) {
-         bthread[j]->join();
-         delete bthread[j];
-         bthread[j] = NULL;
-      }
-
       d_cumulative_count += (int) d_samples_per_slot;
+      
+      /* 
+       * The runtime system wants to know how many output items we
+       * produced, assuming that this is equal to the number of input
+       * items consumed.  We tell it that we produced/consumed one
+       * time slot of input items so that our next run starts one slot
+       * later.
+       */
       return (int) d_samples_per_slot;
-    }
-
-    void
-    multi_sniffer_impl::work_freq( int                        noutput_items,
-                                   gr_vector_const_void_star& input_items,
-                                   gr_vector_void_star&       output_items,
-                                   double                     freq )
-    {
-      gr_complex *ch_samples = new gr_complex[noutput_items+100000];
-
-      gr_vector_void_star btch( 1 );
-      btch[0] = ch_samples;
-      double on_channel_energy, snr;
-      int ch_count = channel_samples( freq, input_items, btch, on_channel_energy, history() );
-      bool brok; // = check_basic_rate_squelch(input_items);
-      bool leok = brok = check_snr( freq, on_channel_energy, snr, input_items );
-
-      /* number of symbols available */
-      if (brok || leok) {
-        int sym_length = history();
-        char *symbols = new char[sym_length];
-        /* pointer to our starting place for sniff_ */
-        char *symp = symbols;
-        gr_vector_const_void_star cbtch( 1 );
-        cbtch[0] = ch_samples;
-        int len = channel_symbols( cbtch, symbols, ch_count );
-
-        if (brok) {
-          int limit = ((len - SYMBOLS_PER_BASIC_RATE_SHORTENED_ACCESS_CODE) < SYMBOLS_PER_BASIC_RATE_SLOT) ? 
-            (len - SYMBOLS_PER_BASIC_RATE_SHORTENED_ACCESS_CODE) : SYMBOLS_PER_BASIC_RATE_SLOT;
-
-          /* look for multiple packets in this slot */
-          while (limit >= 0) {
-            /* index to start of packet */
-            int i = classic_packet::sniff_ac(symp, limit);
-
-            if (i >= 0) {
-              int step = i + SYMBOLS_PER_BASIC_RATE_SHORTENED_ACCESS_CODE;
-              ac(&symp[i], len - i, freq, snr);
-              len -= step;
-
-              if(step >= sym_length) error_out("Bad step");
-              symp = &symp[step];
-              limit -= step;
-            } else {
-              break;
-            }
-          }
-        }
-
-        #ifdef BTLE_ENABLE
-        if (leok) {
-          symp = symbols;
-          int limit = ((len - SYMBOLS_PER_BASIC_RATE_SHORTENED_ACCESS_CODE) < SYMBOLS_PER_BASIC_RATE_SLOT) ? 
-            (len - SYMBOLS_PER_BASIC_RATE_SHORTENED_ACCESS_CODE) : SYMBOLS_PER_BASIC_RATE_SLOT;
-
-          while (limit >= 0) {
-            int i = le_packet::sniff_aa(symp, limit, freq);
-
-            if (i >= 0) {
-              int step = i + SYMBOLS_PER_LOW_ENERGY_PREAMBLE_AA;
-              //printf("symp[%i], len-i = %i\n", i, len-i);
-              aa(&symp[i], len - i, freq, snr);
-              len -= step;
-
-              if(step >= sym_length) error_out("Bad step");
-              symp  = &symp[step];
-              limit -= step;
-            } else {
-              break;
-            }
-          }
-        }
-        #endif
-        delete [] symbols;
-      }
-      delete [] ch_samples;
     }
 
     /* handle AC */
@@ -201,12 +178,10 @@ namespace gr {
              clkn, snr, pkt->get_channel( ), lap);
 
       if (pkt->header_present()) {
-        m_basic_rate_piconets.lock();
         if (!d_basic_rate_piconets[lap]) {
           d_basic_rate_piconets[lap] = basic_rate_piconet::make(lap);
         }
         basic_rate_piconet::sptr pn = d_basic_rate_piconets[lap];
-        m_basic_rate_piconets.unlock();
 
         if (pn->have_clk6() && pn->have_UAP()) {
           decode(pkt, pn, true);
@@ -220,9 +195,7 @@ namespace gr {
          * cause problems later.
          */
         if (lap == GIAC || lap == LIAC) {
-          m_basic_rate_piconets.lock();
           d_basic_rate_piconets.erase(lap);
-          m_basic_rate_piconets.unlock();
         }
       } 
       else {
@@ -242,13 +215,10 @@ namespace gr {
 
       if (pkt->header_present()) {
         uint32_t aa = pkt->get_AA( );
-
-        m_low_energy_piconets.lock();
         if (!d_low_energy_piconets[aa]) {
           d_low_energy_piconets[aa] = low_energy_piconet::make(aa);
         }
         low_energy_piconet::sptr pn = d_low_energy_piconets[aa];
-        m_low_energy_piconets.unlock();
       }
       else {
         // TODO: log AA
@@ -382,12 +352,10 @@ namespace gr {
       printf(", CLK %07x\n", clk);
 
       /* make use of this information from now on */
-      m_basic_rate_piconets.lock();
       if (!d_basic_rate_piconets[lap]) {
         d_basic_rate_piconets[lap] = basic_rate_piconet::make(lap);
       }
       pn = d_basic_rate_piconets[lap];
-      m_basic_rate_piconets.unlock();
 	
       pn->set_UAP(uap);
       pn->set_NAP(nap);
