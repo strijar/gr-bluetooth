@@ -1080,11 +1080,11 @@ namespace gr {
           d_packet_type = air_to_host8(&d_packet_header[3], 4);
           return true;
         } else {
-          printf("bad HEC! %02x %02x %i ", UAP, d_UAP, air_to_host8(&d_packet_header[3], 4));
+          /* LOG printf("bad HEC! %02x %02x %i ", UAP, d_UAP, air_to_host8(&d_packet_header[3], 4)); */
         }
       }
 	
-      printf("failed to decode header\n");
+      /* LOG printf("failed to decode header\n"); */
       return false;
     }
 

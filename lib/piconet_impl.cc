@@ -497,7 +497,7 @@ namespace gr {
 
       d_got_first_packet = true;
 
-      printf("reduced from %d to %d CLK1-6 candidates\n", starting, remaining);
+      /* LOG printf("reduced from %d to %d CLK1-6 candidates\n", starting, remaining); */
 
       if (remaining == 1) {
         d_clk_offset = (first_clock - (d_first_pkt_time & 0x3f)) & 0x3f;
@@ -525,7 +525,7 @@ namespace gr {
     /* reset UAP/clock discovery */
     void basic_rate_piconet_impl::reset()
     {
-      printf("no candidates remaining! starting over . . .\n");
+      /* LOG printf("no candidates remaining! starting over . . .\n"); */
 
       if(d_hop_reversal_inited) {
         free(d_clock_candidates);

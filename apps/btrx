@@ -9,9 +9,31 @@ If LAP is specified without UAP, UAP detection mode is enabled.
 
 from gnuradio import gr, blocks
 
+import pmt
 import gr_bluetooth
 from gnuradio.eng_option import eng_option
 from optparse import OptionParser
+
+class msg_block(gr.basic_block):
+     def __init__(self):
+         gr.basic_block.__init__(
+             self,
+             name="msg_block",
+             in_sig=None,
+             out_sig=None)
+
+         self.message_port_register_in(pmt.intern('bt_in'))
+         self.message_port_register_in(pmt.intern('ble_in'))
+
+         self.set_msg_handler(pmt.intern('bt_in'), self.handle_bt)
+         self.set_msg_handler(pmt.intern('ble_in'), self.handle_ble)
+
+     def handle_bt(self, msg):
+         print("BT", pmt.to_python(msg))
+
+     def handle_ble(self, msg):
+         print("BLE", pmt.to_python(msg))
+
 
 class my_top_block(gr.top_block):
 
@@ -143,6 +165,9 @@ class my_top_block(gr.top_block):
 			# discovering UAPs and clocks as necessary
 			dst = gr_bluetooth.multi_sniffer(options.sample_rate, options.freq,
 											 options.snr, options.wireshark)
+			msg = msg_block()
+			self.msg_connect(dst, "bt_out", msg, "bt_in")
+
 		elif options.lap is None:
 			# print out LAP for every frame detected
 			dst = gr_bluetooth.multi_LAP(options.sample_rate, options.freq,
