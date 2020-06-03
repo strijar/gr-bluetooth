@@ -61,6 +61,7 @@ namespace gr {
     {
       d_tun = tun;
       set_symbol_history(SYMBOLS_FOR_BASIC_RATE_HISTORY);
+      message_port_register_out(pmt::mp("bt_out"));
 
       /* Tun interface */
       if (d_tun) {
@@ -197,8 +198,19 @@ namespace gr {
       classic_packet::sptr pkt = classic_packet::make(symbols, len, clkn, freq);
       uint32_t lap = pkt->get_LAP();
 
+      /* LOG
       printf("time %6d, snr=%.1f, channel %2d, LAP %06x ", 
              clkn, snr, pkt->get_channel( ), lap);
+      */
+
+      pmt::pmt_t msg = pmt::make_dict();
+
+      msg = pmt::dict_add(msg, pmt::intern("time"), pmt::from_long(clkn));
+      msg = pmt::dict_add(msg, pmt::intern("snr"), pmt::from_double(snr));
+      msg = pmt::dict_add(msg, pmt::intern("channel"), pmt::from_long(pkt->get_channel()));
+      msg = pmt::dict_add(msg, pmt::intern("lap"), pmt::from_long(lap));
+
+      message_port_pub(pmt::intern("bt_out"), msg);
 
       if (pkt->header_present()) {
         m_basic_rate_piconets.lock();
@@ -237,7 +249,7 @@ namespace gr {
       le_packet::sptr pkt = le_packet::make(symbols, len, freq);
       uint32_t clkn = (int) (d_cumulative_count / d_samples_per_slot) & 0x7ffffff;
 
-      printf("time %6d, snr=%.1f, ", clkn, snr);
+      /* LOG printf("time %6d, snr=%.1f, ", clkn, snr); */
       pkt->print( );
 
       if (pkt->header_present()) {
@@ -258,7 +270,7 @@ namespace gr {
     /* handle ID packet (no header) */
     void multi_sniffer_impl::id(uint32_t lap)
     {
-      printf("ID\n");
+      /* LOG printf("ID\n"); */
       if (d_tun) {
         write_interface(d_tunfd, NULL, 0, 0, lap, ETHER_TYPE);
       }
@@ -304,7 +316,7 @@ namespace gr {
         /* start rediscovery with this packet */
         discover(pkt, pn);
       } else {
-        printf("Giving up on queued packet!\n");
+        /* LOG printf("Giving up on queued packet!\n"); */
       }
     }
 
@@ -317,7 +329,7 @@ namespace gr {
     void multi_sniffer_impl::discover(classic_packet::sptr pkt,
                                       basic_rate_piconet::sptr pn)
     {
-      printf("working on UAP/CLK1-6\n");
+      /* LOG printf("working on UAP/CLK1-6\n"); */
 
       /* store packet for decoding after discovery is complete */
       pn->enqueue(pkt);
@@ -335,12 +347,14 @@ namespace gr {
     void multi_sniffer_impl::recall(basic_rate_piconet::sptr pn)
     {
       packet::sptr pkt;
-      printf("Decoding queued packets\n");
+      /* LOG printf("Decoding queued packets\n"); */
       
       while (pkt = pn->dequeue()) {
         classic_packet::sptr cpkt = boost::dynamic_pointer_cast<classic_packet>(pkt);
+        /* LOG
         printf("time %6d, channel %2d, LAP %06x ", cpkt->d_clkn,
                cpkt->get_channel(), cpkt->get_LAP());
+	*/
         decode(cpkt, pn, false);
       }
       
