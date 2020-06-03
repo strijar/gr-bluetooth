@@ -1,0 +1,97 @@
+#!/usr/bin/env python
+# Copyright 2008, 2009 Dominic Spill, Michael Ossmann
+"""
+Bluetooth monitoring utility.
+Receives samples from radio, file (as created by osmo_sdr), or standard input.
+If LAP is unspecified, LAP detection mode is enabled.
+If LAP is specified without UAP, UAP detection mode is enabled.
+"""
+
+from gnuradio import gr, blocks
+
+import pmt
+import gr_bluetooth
+from gnuradio.eng_option import eng_option
+from optparse import OptionParser
+
+class msg_block(gr.basic_block):
+     def __init__(self):
+         gr.basic_block.__init__(
+             self,
+             name="msg_block",
+             in_sig=None,
+             out_sig=None)
+
+         self.message_port_register_in(pmt.intern('bt_in'))
+         self.message_port_register_in(pmt.intern('ble_in'))
+
+         self.set_msg_handler(pmt.intern('bt_in'), self.handle_bt)
+         self.set_msg_handler(pmt.intern('ble_in'), self.handle_ble)
+
+     def handle_bt(self, msg):
+         print("BT", pmt.to_python(msg))
+
+     def handle_ble(self, msg):
+         print("BLE", pmt.to_python(msg))
+
+class my_top_block(gr.top_block):
+
+	def __init__(self):
+		gr.top_block.__init__(self)
+
+		sample_rate = 2000000
+		freq = 2.410e9
+		gain = 0.0
+		antenna = "LNAH"
+		snr = 10.0
+
+		# Bluetooth operates at 1 million symbols per second
+		symbol_rate = 1e6
+
+		# the demodulator needs at least two samples per symbol
+		min_samples_per_symbol = 2
+		min_sample_rate = symbol_rate * min_samples_per_symbol
+
+		# input_size = gr.sizeof_short
+		input_size = gr.sizeof_gr_complex
+
+		stages = []
+
+		try:
+			import osmosdr
+		except:
+			print('Unable to import osmosdr module, please make sure it was installed and try again')
+			raise SystemExit(1)
+		try:
+			src = osmosdr.source(args="")
+			src.set_sample_rate(sample_rate)
+			src.set_freq_corr(0, 0)
+			src.set_dc_offset_mode(0, 0)
+			src.set_iq_balance_mode(0, 0)
+			src.set_gain_mode(True, 0)
+			src.set_gain(gain, 0)
+			src.set_if_gain(20, 0)
+			src.set_bb_gain(20, 0)
+			src.set_antenna(antenna, 0)
+			src.set_bandwidth(0, 0)
+			#print "Using RX board id 0x%04X" % (src.daughterboard_id(),)
+			#src.set_decim(options.decim)
+			r = src.set_center_freq(freq, 0)
+		except:
+			raise
+			print('Error accessing USRP, ensure it is plugged in and switched on and try again')
+			parser.print_help()
+			raise SystemExit(1)
+
+		# bluetooth decoding
+		dst = gr_bluetooth.multi_sniffer(sample_rate, freq, snr, False)
+		msg = msg_block()
+		self.msg_connect(dst, "bt_out", msg, "bt_in")
+		self.connect(src, dst)
+
+if __name__ == '__main__':
+	#raw_input("Press return to continue...")
+	try:
+		my_top_block().run()
+	except KeyboardInterrupt:
+		pass
