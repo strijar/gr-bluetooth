@@ -209,6 +209,7 @@ namespace gr {
       msg = pmt::dict_add(msg, pmt::intern("snr"), pmt::from_double(snr));
       msg = pmt::dict_add(msg, pmt::intern("channel"), pmt::from_long(pkt->get_channel()));
       msg = pmt::dict_add(msg, pmt::intern("lap"), pmt::from_long(lap));
+      msg = pmt::dict_add(msg, pmt::intern("symbols"), pmt::init_u8vector(len, (const uint8_t*) symbols));
 
       message_port_pub(pmt::intern("bt_out"), msg);
 
